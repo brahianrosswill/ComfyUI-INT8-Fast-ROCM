@@ -120,9 +120,17 @@ def rocm_int8_linear(
     convrot: bool = False,
     convrot_groupsize: int = 256,
     input_act: str | None = None,
+    input_act_weight: torch.Tensor | None = None,
+    **_unused_kwargs,
 ) -> torch.Tensor:
-    # Step 1: input activation function, same as kitchen
-    x = ck_quant._apply_input_act(x, input_act)
+    # Step 1: input activation function, same as kitchen.
+    # Newer comfy_kitchen passes input_act_weight for parametrized
+    # activations fused into the ConvRot quantizer load. Forward it if the
+    # installed _apply_input_act accepts it, fall back if not.
+    try:
+        x = ck_quant._apply_input_act(x, input_act, input_act_weight)
+    except TypeError:
+        x = ck_quant._apply_input_act(x, input_act)
 
     if x.shape[-1] != weight.shape[-1]:
         raise ValueError(
@@ -285,7 +293,7 @@ def smoke_test(device="cuda"):
     test_kwargs = dict(
         x=x, weight=weight_int8, weight_scale=weight_scale, bias=bias,
         out_dtype=torch.float16, convrot=False, convrot_groupsize=256,
-        input_act=None,
+        input_act=None, input_act_weight=None,
     )
     impl = registry.get_implementation("int8_linear", kwargs=test_kwargs)
     assert impl is rocm_int8_linear, (
